@@ -14,7 +14,7 @@ public:
 		};
 
 		virtualFunctionPattern["Class CoreUObject.Object"] = {
-			{ "\x45\x33\xC0\x48\x8D\x55\x10\x49\x8B", "xxxxxxxxx", 0x200, R"(	inline void ProcessEvent(class UFunction* function, void* parms)
+			{ "\x45\x33\xC0\x48\x8D\x55\x10", "xxxxxxx", 0x200, R"(	inline void ProcessEvent(class UFunction* function, void* parms)
 	{
 		return GetVFunction<void(*)(UObject*, class UFunction*, void*)>(this, %d)(this, function, parms);
 	})" }
@@ -87,7 +87,7 @@ public:
 		};
 
 		predefinedMethods["Class CoreUObject.Object"] = {
-			PredefinedMethod::Inline(R"(	static inline TArray<UObject*>& UObject::GetGlobalObjects()
+			PredefinedMethod::Inline(R"(	static inline FChunkedFixedUObjectArray& GetGlobalObjects()
 	{
 		return GObjects->ObjObjects;
 	})"),
@@ -132,7 +132,7 @@ public:
 	{
 		for (int i = 0; i < GetGlobalObjects().Num(); ++i)
 		{
-			auto object = GetGlobalObjects().GetByIndex(i);
+			auto object = GetGlobalObjects().GetByIndex(i).Object;
 
 			if (object == nullptr)
 			{
@@ -153,7 +153,7 @@ public:
 			PredefinedMethod::Inline(R"(	template<typename T>
 	static T* GetObjectCasted(std::size_t index)
 	{
-		return static_cast<T*>(GetGlobalObjects().GetByIndex(index));
+		return static_cast<T*>(GetGlobalObjects().GetByIndex(index).Object);
 	})"),
 			PredefinedMethod::Default("bool IsA(UClass* cmp) const", R"(bool UObject::IsA(UClass* cmp) const
 {
@@ -191,7 +191,7 @@ public:
 
 	std::string GetGameVersion() const override
 	{
-		return "7.0";
+		return "8.56";
 	}
 
 	std::string GetNamespaceName() const override
@@ -245,29 +245,6 @@ public:
 		return i < Num();
 	}
 
-	inline T& GetByIndex(size_t i)
-	{
-		return Data[i];
-	}
-
-	inline const T& GetByIndex(size_t i) const
-	{
-		return Data[i];
-	}
-
-	void Add(T InputData)
-	{
-		Data = (T*)realloc(Data, sizeof(T) * (Count + 1));
-		Data[Count++] = InputData;
-		Max = Count;
-	};
-
-	void Clear()
-	{
-		free(Data);
-		Count = Max = 0;
-	};
-
 private:
 	T* Data;
 	int32_t Count;
@@ -276,14 +253,56 @@ private:
 
 class UObject;
 
+class FUObjectItem
+{
+public:
+	UObject* Object;
+	int32_t SerialNumber;
+};
+
+class FChunkedFixedUObjectArray
+{
+public:
+	inline int32_t Num() const
+	{
+		return NumElements;
+	}
+
+	enum
+	{
+		NumElementsPerChunk = 64 * 1024,
+	};
+
+	inline FUObjectItem const* GetObjectPtr(int32_t Index) const
+	{
+		const int32_t ChunkIndex = Index / NumElementsPerChunk;
+		const int32_t WithinChunkIndex = Index % NumElementsPerChunk;
+		const auto Chunk = Objects[ChunkIndex];
+		return Chunk + WithinChunkIndex;
+	}
+
+	inline FUObjectItem const& GetByIndex(int32_t Index) const
+	{
+		return *GetObjectPtr(Index);
+	}
+
+private:
+	FUObjectItem** Objects;
+	FUObjectItem* PreAllocatedObjects;
+	int32_t MaxElements;
+	int32_t NumElements;
+	int32_t MaxChunks;
+	int32_t NumChunks;
+};
+
 class FUObjectArray
 {
 public:
 	int32_t ObjFirstGCIndex;
 	int32_t ObjLastNonGCIndex;
+	int32_t MaxObjectsNotConsideredByGC;
 	int32_t OpenForDisregardForGC;
-	TArray<UObject*> ObjObjects;
-	TArray<int32_t> ObjAvailable;
+	FChunkedFixedUObjectArray ObjObjects;
 };
 
 class FNameEntry
@@ -693,34 +712,7 @@ class TLazyObjectPtr : FLazyObjectPtr
 	std::string GetBasicDefinitions() const override
 	{
 		return R"(TNameEntryArray* FName::GNames = nullptr;
-FUObjectArray* UObject::GObjects = nullptr;
-//---------------------------------------------------------------------------
-bool FWeakObjectPtr::IsValid() const
-{
-	if (ObjectSerialNumber == 0)
-	{
-		return false;
-	}
-	if (ObjectIndex < 0)
-	{
-		return false;
-	}
-	if (!UObject::GetGlobalObjects().IsValidIndex(ObjectIndex))
-	{
-		return false;
-	}
-	return UObject::GetGlobalObjects()[ObjectIndex] != nullptr;
-}
-//---------------------------------------------------------------------------
-UObject* FWeakObjectPtr::Get() const
-{
-	if (IsValid())
-	{
-		return UObject::GetGlobalObjects()[ObjectIndex];
-	}
-	return nullptr;
-}
-//---------------------------------------------------------------------------)";
+FUObjectArray* UObject::GObjects = nullptr;)";
 	}
 };
 
