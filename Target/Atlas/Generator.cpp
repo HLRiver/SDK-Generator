@@ -191,7 +191,7 @@ public:
 
 	std::string GetGameVersion() const override
 	{
-		return "8.56";
+		return "15.1";
 	}
 
 	std::string GetNamespaceName() const override

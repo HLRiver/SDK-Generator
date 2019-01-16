@@ -58,8 +58,8 @@ FUObjectArray* GlobalObjects = nullptr;
 
 bool ObjectsStore::Initialize()
 {
-	const auto address = FindPattern(GetModuleHandleW(nullptr), reinterpret_cast<const unsigned char*>("\x48\x8D\x05\x00\x00\x00\x00\x8B\x40"), "xxx????xx");
-	GlobalObjects = reinterpret_cast<decltype(GlobalObjects)>(address + 7 + *reinterpret_cast<uint32_t*>(address + 3));
+	auto Address = FindPattern(GetModuleHandleW(0), (unsigned char*)"\x48\x8D\x05\x00\x00\x00\x00\x8B\x40", "xxx????xx");
+	GlobalObjects = (FUObjectArray*)(Address + *(DWORD*)(Address + 0x3) + 0x7);
 
 	return true;
 }
